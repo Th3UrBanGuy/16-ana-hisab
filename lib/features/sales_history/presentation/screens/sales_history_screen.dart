@@ -1,39 +1,16 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:intl/intl.dart';
 import '../../../../core/constants/app_constants.dart';
-import '../../../../core/utils/formatters.dart';
+import '../../../../core/models/order_model.dart' as models;
+import '../../../../main.dart';
 
 class SalesHistoryScreen extends ConsumerWidget {
   const SalesHistoryScreen({super.key});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final orders = [
-      {
-        'invoice': '#4092',
-        'customer': 'Morning Brew Co.',
-        'items': ['1x Cappuccino', '1x Almond Croissant', '1x Sparkling Water'],
-        'date': DateTime.now(),
-        'total': 11.61,
-        'status': 'Paid',
-      },
-      {
-        'invoice': '#4091',
-        'customer': 'Walk-in Customer',
-        'items': ['2x Double Espresso', '1x Muffin'],
-        'date': DateTime.now().subtract(Duration(hours: 2)),
-        'total': 19.50,
-        'status': 'Paid',
-      },
-      {
-        'invoice': '#4090',
-        'customer': 'Coffee Lovers Inc.',
-        'items': ['1x Latte', '3x Donuts'],
-        'date': DateTime.now().subtract(Duration(hours: 5)),
-        'total': 15.75,
-        'status': 'Paid',
-      },
-    ];
+    final ordersStream = ref.watch(firestoreServiceProvider).getOrders();
 
     return Scaffold(
       appBar: AppBar(
@@ -43,102 +20,129 @@ class SalesHistoryScreen extends ConsumerWidget {
             icon: Icon(Icons.filter_list),
             onPressed: () {},
           ),
-          IconButton(
-            icon: Icon(Icons.download),
-            onPressed: () {},
-          ),
         ],
       ),
-      body: ListView.builder(
-        padding: EdgeInsets.all(16),
-        itemCount: orders.length,
-        itemBuilder: (context, index) {
-          final order = orders[index];
-          return _buildOrderCard(context, order);
+      body: StreamBuilder<List<models.Order>>(
+        stream: ordersStream,
+        builder: (context, snapshot) {
+          if (snapshot.connectionState == ConnectionState.waiting) {
+            return Center(child: CircularProgressIndicator());
+          }
+
+          if (!snapshot.hasData || snapshot.data!.isEmpty) {
+            return Center(
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Icon(Icons.receipt_long, size: 64, color: Colors.grey),
+                  SizedBox(height: 16),
+                  Text(
+                    'No sales history',
+                    style: TextStyle(fontSize: 18, color: Colors.grey),
+                  ),
+                ],
+              ),
+            );
+          }
+
+          final orders = snapshot.data!;
+
+          return ListView.builder(
+            padding: EdgeInsets.all(16),
+            itemCount: orders.length,
+            itemBuilder: (context, index) {
+              return _OrderCard(order: orders[index]);
+            },
+          );
         },
       ),
     );
   }
+}
 
-  Widget _buildOrderCard(BuildContext context, Map<String, dynamic> order) {
+class _OrderCard extends StatelessWidget {
+  final models.Order order;
+
+  const _OrderCard({required this.order});
+
+  @override
+  Widget build(BuildContext context) {
+    final dateFormat = DateFormat('MMM dd, yyyy HH:mm');
+    final statusColor = _getStatusColor(order.status);
+
     return Card(
       margin: EdgeInsets.only(bottom: 16),
+      elevation: 2,
       child: InkWell(
         onTap: () {
-          _showOrderDetails(context, order);
+          showDialog(
+            context: context,
+            builder: (context) => _OrderDetailsDialog(order: order),
+          );
         },
-        borderRadius: BorderRadius.circular(16),
+        borderRadius: BorderRadius.circular(12),
         child: Padding(
-          padding: EdgeInsets.all(20),
+          padding: EdgeInsets.all(16),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
-                  Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        order['customer'] as String,
-                        style: TextStyle(
-                          fontSize: 16,
-                          fontWeight: FontWeight.bold,
-                        ),
-                      ),
-                      SizedBox(height: 4),
-                      Text(
-                        order['invoice'] as String,
-                        style: TextStyle(
-                          fontSize: 12,
-                          color: AppColors.textSecondary,
-                        ),
-                      ),
-                    ],
+                  Text(
+                    order.invoiceNumber,
+                    style: TextStyle(
+                      fontSize: 18,
+                      fontWeight: FontWeight.bold,
+                    ),
                   ),
                   Container(
                     padding: EdgeInsets.symmetric(horizontal: 12, vertical: 6),
                     decoration: BoxDecoration(
-                      color: AppColors.successGreen.withValues(alpha: 0.1),
+                      color: statusColor.withValues(alpha: 0.1),
                       borderRadius: BorderRadius.circular(20),
                     ),
                     child: Text(
-                      order['status'] as String,
+                      order.status,
                       style: TextStyle(
-                        fontSize: 12,
+                        color: statusColor,
                         fontWeight: FontWeight.w600,
-                        color: AppColors.successGreen,
+                        fontSize: 12,
                       ),
                     ),
                   ),
                 ],
               ),
-              SizedBox(height: 12),
-              ...((order['items'] as List<String>).map((item) => Padding(
-                padding: EdgeInsets.only(bottom: 4),
-                child: Text(
-                  item,
-                  style: TextStyle(
-                    fontSize: 14,
-                    color: AppColors.textSecondary,
+              SizedBox(height: 8),
+              Row(
+                children: [
+                  Icon(Icons.calendar_today, size: 14, color: Colors.grey),
+                  SizedBox(width: 4),
+                  Text(
+                    dateFormat.format(order.createdAt),
+                    style: TextStyle(color: Colors.grey, fontSize: 13),
                   ),
-                ),
-              ))),
-              Divider(height: 24),
+                  SizedBox(width: 16),
+                  Icon(Icons.payment, size: 14, color: Colors.grey),
+                  SizedBox(width: 4),
+                  Text(
+                    order.paymentMethod,
+                    style: TextStyle(color: Colors.grey, fontSize: 13),
+                  ),
+                ],
+              ),
+              SizedBox(height: 12),
               Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
                   Text(
-                    Formatters.formatDateTime(order['date'] as DateTime),
-                    style: TextStyle(
-                      fontSize: 12,
-                      color: AppColors.textSecondary,
-                    ),
+                    '${order.items.length} items',
+                    style: TextStyle(fontSize: 14),
                   ),
                   Text(
-                    Formatters.formatCurrency(order['total'] as double),
+                    '\$${order.totalAmount.toStringAsFixed(2)}',
                     style: TextStyle(
-                      fontSize: 18,
+                      fontSize: 20,
                       fontWeight: FontWeight.bold,
                       color: AppColors.primaryTeal,
                     ),
@@ -152,65 +156,100 @@ class SalesHistoryScreen extends ConsumerWidget {
     );
   }
 
-  void _showOrderDetails(BuildContext context, Map<String, dynamic> order) {
-    showModalBottomSheet(
-      context: context,
-      backgroundColor: AppColors.white,
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-      ),
-      builder: (context) => Container(
-        padding: EdgeInsets.all(24),
+  Color _getStatusColor(String status) {
+    switch (status.toLowerCase()) {
+      case 'paid':
+        return Colors.green;
+      case 'void':
+        return Colors.red;
+      case 'refunded':
+        return Colors.orange;
+      case 'parked':
+        return Colors.blue;
+      default:
+        return Colors.grey;
+    }
+  }
+}
+
+class _OrderDetailsDialog extends StatelessWidget {
+  final models.Order order;
+
+  const _OrderDetailsDialog({required this.order});
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: Text('Order Details'),
+      content: SingleChildScrollView(
         child: Column(
-          mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
+          mainAxisSize: MainAxisSize.min,
           children: [
+            Text('Invoice: ${order.invoiceNumber}', style: TextStyle(fontWeight: FontWeight.bold)),
+            SizedBox(height: 8),
+            Text('Date: ${DateFormat('MMM dd, yyyy HH:mm').format(order.createdAt)}'),
+            Text('Payment: ${order.paymentMethod}'),
+            Text('Status: ${order.status}'),
+            Divider(height: 24),
+            Text('Items:', style: TextStyle(fontWeight: FontWeight.bold)),
+            SizedBox(height: 8),
+            ...order.items.map((item) => Padding(
+              padding: EdgeInsets.only(bottom: 8),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Expanded(child: Text('${item.productName} x${item.quantity}')),
+                  Text('\$${item.subtotal.toStringAsFixed(2)}'),
+                ],
+              ),
+            )),
+            Divider(height: 24),
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
-                Text(
-                  'Order Details',
-                  style: TextStyle(
-                    fontSize: 20,
-                    fontWeight: FontWeight.bold,
-                  ),
-                ),
-                IconButton(
-                  icon: Icon(Icons.close),
-                  onPressed: () => Navigator.pop(context),
-                ),
+                Text('Subtotal:'),
+                Text('\$${order.subtotal.toStringAsFixed(2)}'),
               ],
             ),
-            SizedBox(height: 20),
-            Text(
-              'Invoice: ${order['invoice']}',
-              style: TextStyle(fontWeight: FontWeight.w600),
-            ),
-            SizedBox(height: 8),
-            Text('Customer: ${order['customer']}'),
-            SizedBox(height: 20),
+            SizedBox(height: 4),
             Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
-                Expanded(
-                  child: ElevatedButton.icon(
-                    onPressed: () {},
-                    icon: Icon(Icons.print),
-                    label: Text('Print Receipt'),
-                  ),
-                ),
-                SizedBox(width: 12),
-                Expanded(
-                  child: OutlinedButton.icon(
-                    onPressed: () {},
-                    icon: Icon(Icons.share),
-                    label: Text('Share'),
-                  ),
+                Text('Tax:'),
+                Text('\$${order.taxAmount.toStringAsFixed(2)}'),
+              ],
+            ),
+            if (order.discountAmount > 0) ...[
+              SizedBox(height: 4),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Text('Discount:'),
+                  Text('-\$${order.discountAmount.toStringAsFixed(2)}'),
+                ],
+              ),
+            ],
+            Divider(height: 16),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Text('Total:', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+                Text(
+                  '\$${order.totalAmount.toStringAsFixed(2)}',
+                  style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18, color: AppColors.primaryTeal),
                 ),
               ],
             ),
           ],
         ),
       ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context),
+          child: Text('Close'),
+        ),
+      ],
     );
   }
 }

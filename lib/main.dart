@@ -1,7 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:firebase_core/firebase_core.dart';
+import 'firebase_options.dart';
 import 'core/theme/app_theme.dart';
 import 'core/database/app_database.dart';
+import 'core/services/firestore_service.dart';
+import 'features/auth/presentation/screens/login_screen.dart';
 import 'features/dashboard/presentation/screens/dashboard_screen.dart';
 import 'features/pos/presentation/screens/pos_screen.dart';
 import 'features/inventory/presentation/screens/inventory_screen.dart';
@@ -13,8 +17,19 @@ final databaseProvider = Provider<AppDatabase>((ref) {
   return AppDatabase();
 });
 
-void main() {
+// Global Firestore Service Provider
+final firestoreServiceProvider = Provider<FirestoreService>((ref) {
+  return FirestoreService();
+});
+
+void main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  
+  // Initialize Firebase
+  await Firebase.initializeApp(
+    options: DefaultFirebaseOptions.currentPlatform,
+  );
+  
   runApp(
     ProviderScope(
       child: MyApp(),
@@ -33,7 +48,11 @@ class MyApp extends ConsumerWidget {
       theme: AppTheme.lightTheme,
       darkTheme: AppTheme.darkTheme,
       themeMode: ThemeMode.light,
-      home: MainNavigationScreen(),
+      initialRoute: '/',
+      routes: {
+        '/': (context) => LoginScreen(),
+        '/home': (context) => MainNavigationScreen(),
+      },
     );
   }
 }

@@ -1,7 +1,21 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:uuid/uuid.dart';
 import '../../../../core/constants/app_constants.dart';
 import '../../../../core/utils/formatters.dart';
+import '../../../../core/models/product_model.dart';
+import '../../../../core/models/category_model.dart' as models;
+import '../../../../core/models/order_model.dart' as models;
+import '../../../../main.dart';
+
+class CartItem {
+  final Product product;
+  int quantity;
+  
+  CartItem({required this.product, this.quantity = 1});
+  
+  double get subtotal => product.price * quantity;
+}
 
 class PosScreen extends ConsumerStatefulWidget {
   const PosScreen({super.key});
@@ -11,27 +25,140 @@ class PosScreen extends ConsumerStatefulWidget {
 }
 
 class _PosScreenState extends ConsumerState<PosScreen> {
-  int _selectedCategory = 0;
-  final List<String> _categories = ['All Items', 'Burgers', 'Bowls', 'Drink'];
+  String? _selectedCategoryId;
+  final List<CartItem> _cartItems = [];
+  final TextEditingController _searchController = TextEditingController();
+  String _searchQuery = '';
+  double _taxRate = 0.10; // 10% tax
   
-  // Mock cart items
-  final List<Map<String, dynamic>> _cartItems = [
-    {'name': 'Double Espresso', 'price': 8.00, 'quantity': 1},
-  ];
+  @override
+  void dispose() {
+    _searchController.dispose();
+    super.dispose();
+  }
+
+  double get _subtotal => _cartItems.fold(0.0, (sum, item) => sum + item.subtotal);
+  double get _taxAmount => _subtotal * _taxRate;
+  double get _total => _subtotal + _taxAmount;
+
+  void _addToCart(Product product) {
+    setState(() {
+      final existingItem = _cartItems.where((item) => item.product.id == product.id).firstOrNull;
+      if (existingItem != null) {
+        existingItem.quantity++;
+      } else {
+        _cartItems.add(CartItem(product: product));
+      }
+    });
+  }
+
+  void _removeFromCart(int index) {
+    setState(() {
+      _cartItems.removeAt(index);
+    });
+  }
+
+  void _updateQuantity(int index, int delta) {
+    setState(() {
+      _cartItems[index].quantity += delta;
+      if (_cartItems[index].quantity <= 0) {
+        _cartItems.removeAt(index);
+      }
+    });
+  }
+
+  Future<void> _checkout(BuildContext context) async {
+    if (_cartItems.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Cart is empty')),
+      );
+      return;
+    }
+
+    final paymentMethod = await showDialog<String>(
+      context: context,
+      builder: (context) => _CheckoutDialog(totalAmount: _total),
+    );
+
+    if (paymentMethod == null) return;
+
+    try {
+      final firestoreService = ref.read(firestoreServiceProvider);
+      final uuid = Uuid();
+      
+      // Generate invoice number
+      final invoiceNumber = 'INV-${DateTime.now().millisecondsSinceEpoch.toString().substring(7)}';
+      
+      // Create order
+      final order = models.Order(
+        id: '',
+        invoiceNumber: invoiceNumber,
+        subtotal: _subtotal,
+        taxAmount: _taxAmount,
+        discountAmount: 0.0,
+        totalAmount: _total,
+        paymentMethod: paymentMethod,
+        status: 'Paid',
+        createdAt: DateTime.now(),
+      );
+      
+      // Create order items
+      final items = _cartItems.map((cartItem) => models.OrderItem(
+        id: uuid.v4(),
+        orderId: '',
+        productId: cartItem.product.id,
+        productName: cartItem.product.name,
+        quantity: cartItem.quantity,
+        unitPrice: cartItem.product.price,
+        subtotal: cartItem.subtotal,
+      )).toList();
+      
+      // Save order to Firebase
+      await firestoreService.createOrder(order, items);
+      
+      if (!mounted) return;
+      
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Order completed successfully!'),
+          backgroundColor: Colors.green,
+        ),
+      );
+      
+      // Clear cart
+      setState(() {
+        _cartItems.clear();
+      });
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Error processing order: $e'),
+          backgroundColor: Colors.red,
+        ),
+      );
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
+    final categoriesStream = ref.watch(firestoreServiceProvider).getCategories();
+    final productsStream = _selectedCategoryId == null
+        ? ref.watch(firestoreServiceProvider).getProducts()
+        : ref.watch(firestoreServiceProvider).getProductsByCategory(_selectedCategoryId!);
+
     return Scaffold(
       appBar: AppBar(
-        title: Row(
-          children: [
-            Text('NeoPOS', style: TextStyle(fontWeight: FontWeight.bold)),
-          ],
-        ),
+        title: Text('Point of Sale'),
         actions: [
           IconButton(
-            icon: Icon(Icons.search),
-            onPressed: () {},
+            icon: Icon(Icons.qr_code_scanner),
+            onPressed: () {
+              // TODO: Implement barcode scanning
+              ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(content: Text('Barcode scanner coming soon')),
+              );
+            },
           ),
         ],
       ),
@@ -42,50 +169,116 @@ class _PosScreenState extends ConsumerState<PosScreen> {
             flex: 2,
             child: Column(
               children: [
-                // Category Tabs
-                Container(
-                  height: 60,
-                  padding: EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                  child: ListView.builder(
-                    scrollDirection: Axis.horizontal,
-                    itemCount: _categories.length,
-                    itemBuilder: (context, index) {
-                      final isSelected = _selectedCategory == index;
-                      return Padding(
-                        padding: EdgeInsets.only(right: 8),
-                        child: ChoiceChip(
-                          label: Text(_categories[index]),
-                          selected: isSelected,
-                          onSelected: (selected) {
-                            setState(() {
-                              _selectedCategory = index;
-                            });
-                          },
-                          backgroundColor: Colors.grey.shade200,
-                          selectedColor: AppColors.primaryTeal,
-                          labelStyle: TextStyle(
-                            color: isSelected ? AppColors.white : AppColors.textPrimary,
-                            fontWeight: isSelected ? FontWeight.w600 : FontWeight.normal,
-                          ),
-                        ),
-                      );
+                // Search Bar
+                Padding(
+                  padding: EdgeInsets.all(16),
+                  child: TextField(
+                    controller: _searchController,
+                    decoration: InputDecoration(
+                      hintText: 'Search products...',
+                      prefixIcon: Icon(Icons.search),
+                      filled: true,
+                      fillColor: Colors.grey.shade200,
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(12),
+                        borderSide: BorderSide.none,
+                      ),
+                    ),
+                    onChanged: (value) {
+                      setState(() {
+                        _searchQuery = value.toLowerCase();
+                      });
                     },
                   ),
                 ),
                 
+                // Category Tabs
+                StreamBuilder<List<models.Category>>(
+                  stream: categoriesStream,
+                  builder: (context, snapshot) {
+                    if (!snapshot.hasData) {
+                      return SizedBox(height: 60, child: Center(child: CircularProgressIndicator()));
+                    }
+                    
+                    final categories = snapshot.data!;
+                    return Container(
+                      height: 60,
+                      padding: EdgeInsets.symmetric(horizontal: 16),
+                      child: ListView(
+                        scrollDirection: Axis.horizontal,
+                        children: [
+                          Padding(
+                            padding: EdgeInsets.only(right: 8),
+                            child: ChoiceChip(
+                              label: Text('All Items'),
+                              selected: _selectedCategoryId == null,
+                              onSelected: (selected) {
+                                setState(() => _selectedCategoryId = null);
+                              },
+                              backgroundColor: Colors.grey.shade200,
+                              selectedColor: AppColors.primaryTeal,
+                              labelStyle: TextStyle(
+                                color: _selectedCategoryId == null ? Colors.white : AppColors.textPrimary,
+                              ),
+                            ),
+                          ),
+                          ...categories.map((category) => Padding(
+                            padding: EdgeInsets.only(right: 8),
+                            child: ChoiceChip(
+                              label: Text(category.name),
+                              selected: _selectedCategoryId == category.id,
+                              onSelected: (selected) {
+                                setState(() => _selectedCategoryId = category.id);
+                              },
+                              backgroundColor: Colors.grey.shade200,
+                              selectedColor: AppColors.primaryTeal,
+                              labelStyle: TextStyle(
+                                color: _selectedCategoryId == category.id ? Colors.white : AppColors.textPrimary,
+                              ),
+                            ),
+                          )),
+                        ],
+                      ),
+                    );
+                  },
+                ),
+                
                 // Products Grid
                 Expanded(
-                  child: GridView.builder(
-                    padding: EdgeInsets.all(16),
-                    gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-                      crossAxisCount: 2,
-                      childAspectRatio: 0.85,
-                      crossAxisSpacing: 16,
-                      mainAxisSpacing: 16,
-                    ),
-                    itemCount: 4,
-                    itemBuilder: (context, index) {
-                      return _buildProductCard(index);
+                  child: StreamBuilder<List<Product>>(
+                    stream: productsStream,
+                    builder: (context, snapshot) {
+                      if (snapshot.connectionState == ConnectionState.waiting) {
+                        return Center(child: CircularProgressIndicator());
+                      }
+                      
+                      if (!snapshot.hasData || snapshot.data!.isEmpty) {
+                        return Center(child: Text('No products available'));
+                      }
+                      
+                      var products = snapshot.data!;
+                      
+                      // Apply search filter
+                      if (_searchQuery.isNotEmpty) {
+                        products = products.where((p) => 
+                          p.name.toLowerCase().contains(_searchQuery) ||
+                          p.sku.toLowerCase().contains(_searchQuery)
+                        ).toList();
+                      }
+                      
+                      return GridView.builder(
+                        padding: EdgeInsets.all(16),
+                        gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+                          crossAxisCount: 2,
+                          childAspectRatio: 0.85,
+                          crossAxisSpacing: 16,
+                          mainAxisSpacing: 16,
+                        ),
+                        itemCount: products.length,
+                        itemBuilder: (context, index) {
+                          return _buildProductCard(products[index]);
+                        },
+                      );
                     },
                   ),
                 ),
@@ -125,7 +318,7 @@ class _PosScreenState extends ConsumerState<PosScreen> {
                       ),
                       SizedBox(height: 4),
                       Text(
-                        '#4829 • Walk-in Customer',
+                        '${_cartItems.length} items',
                         style: TextStyle(
                           fontSize: 14,
                           color: AppColors.textSecondary,
@@ -137,14 +330,27 @@ class _PosScreenState extends ConsumerState<PosScreen> {
                 
                 // Cart Items
                 Expanded(
-                  child: ListView.builder(
-                    padding: EdgeInsets.all(16),
-                    itemCount: _cartItems.length,
-                    itemBuilder: (context, index) {
-                      final item = _cartItems[index];
-                      return _buildCartItem(item);
-                    },
-                  ),
+                  child: _cartItems.isEmpty
+                      ? Center(
+                          child: Column(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              Icon(Icons.shopping_cart_outlined, size: 64, color: Colors.grey),
+                              SizedBox(height: 16),
+                              Text(
+                                'Cart is empty',
+                                style: TextStyle(color: Colors.grey, fontSize: 16),
+                              ),
+                            ],
+                          ),
+                        )
+                      : ListView.builder(
+                          padding: EdgeInsets.all(16),
+                          itemCount: _cartItems.length,
+                          itemBuilder: (context, index) {
+                            return _buildCartItem(_cartItems[index], index);
+                          },
+                        ),
                 ),
                 
                 // Order Summary
@@ -158,9 +364,9 @@ class _PosScreenState extends ConsumerState<PosScreen> {
                   ),
                   child: Column(
                     children: [
-                      _buildSummaryRow('Subtotal', 24.00),
+                      _buildSummaryRow('Subtotal', _subtotal),
                       SizedBox(height: 8),
-                      _buildSummaryRow('Tax (10%)', 2.40),
+                      _buildSummaryRow('Tax (10%)', _taxAmount),
                       Divider(height: 24),
                       Row(
                         mainAxisAlignment: MainAxisAlignment.spaceBetween,
@@ -173,7 +379,7 @@ class _PosScreenState extends ConsumerState<PosScreen> {
                             ),
                           ),
                           Text(
-                            Formatters.formatCurrency(26.40),
+                            Formatters.formatCurrency(_total),
                             style: TextStyle(
                               fontSize: 24,
                               fontWeight: FontWeight.bold,
@@ -187,11 +393,10 @@ class _PosScreenState extends ConsumerState<PosScreen> {
                         width: double.infinity,
                         height: 56,
                         child: ElevatedButton(
-                          onPressed: () {
-                            _showCheckoutDialog(context);
-                          },
+                          onPressed: _cartItems.isEmpty ? null : () => _checkout(context),
                           style: ElevatedButton.styleFrom(
                             backgroundColor: AppColors.primaryTeal,
+                            disabledBackgroundColor: Colors.grey,
                           ),
                           child: Row(
                             mainAxisAlignment: MainAxisAlignment.center,
@@ -200,11 +405,6 @@ class _PosScreenState extends ConsumerState<PosScreen> {
                               SizedBox(width: 12),
                               Text(
                                 'Checkout',
-                                style: TextStyle(fontSize: 18),
-                              ),
-                              Spacer(),
-                              Text(
-                                Formatters.formatCurrency(26.40),
                                 style: TextStyle(fontSize: 18),
                               ),
                             ],
@@ -222,46 +422,11 @@ class _PosScreenState extends ConsumerState<PosScreen> {
     );
   }
 
-  Widget _buildProductCard(int index) {
-    final products = [
-      {
-        'name': 'Classic Smash',
-        'description': 'Double patty, cheddar, p...',
-        'price': 12.50,
-        'image': '🍔',
-      },
-      {
-        'name': 'Super Green Bowl',
-        'description': 'Kale, avocado, quinoa, li...',
-        'price': 14.00,
-        'image': '🥗',
-      },
-      {
-        'name': 'Pink Donut',
-        'description': 'Glazed pink donut',
-        'price': 3.50,
-        'image': '🍩',
-      },
-      {
-        'name': 'Double Espresso',
-        'description': 'Rich espresso shot',
-        'price': 8.00,
-        'image': '☕',
-      },
-    ];
-    
-    final product = products[index];
+  Widget _buildProductCard(Product product) {
+    final isLowStock = product.stockQuantity < 10;
     
     return GestureDetector(
-      onTap: () {
-        setState(() {
-          _cartItems.add({
-            'name': product['name'],
-            'price': product['price'],
-            'quantity': 1,
-          });
-        });
-      },
+      onTap: () => _addToCart(product),
       child: Container(
         decoration: BoxDecoration(
           color: AppColors.white,
@@ -281,9 +446,10 @@ class _PosScreenState extends ConsumerState<PosScreen> {
                   ),
                 ),
                 child: Center(
-                  child: Text(
-                    product['image'] as String,
-                    style: TextStyle(fontSize: 60),
+                  child: Icon(
+                    Icons.coffee,
+                    size: 48,
+                    color: AppColors.primaryTeal,
                   ),
                 ),
               ),
@@ -294,7 +460,7 @@ class _PosScreenState extends ConsumerState<PosScreen> {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
-                    product['name'] as String,
+                    product.name,
                     style: TextStyle(
                       fontSize: 16,
                       fontWeight: FontWeight.w600,
@@ -303,21 +469,27 @@ class _PosScreenState extends ConsumerState<PosScreen> {
                     overflow: TextOverflow.ellipsis,
                   ),
                   SizedBox(height: 4),
-                  Text(
-                    product['description'] as String,
-                    style: TextStyle(
-                      fontSize: 12,
-                      color: AppColors.textSecondary,
-                    ),
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
+                  Row(
+                    children: [
+                      Text(
+                        'Stock: ${product.stockQuantity}',
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: isLowStock ? Colors.red : AppColors.textSecondary,
+                        ),
+                      ),
+                      if (isLowStock) ...[
+                        SizedBox(width: 4),
+                        Icon(Icons.warning, size: 12, color: Colors.red),
+                      ],
+                    ],
                   ),
                   SizedBox(height: 8),
                   Row(
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
                       Text(
-                        Formatters.formatCurrency(product['price'] as double),
+                        Formatters.formatCurrency(product.price),
                         style: TextStyle(
                           fontSize: 18,
                           fontWeight: FontWeight.bold,
@@ -347,13 +519,14 @@ class _PosScreenState extends ConsumerState<PosScreen> {
     );
   }
 
-  Widget _buildCartItem(Map<String, dynamic> item) {
+  Widget _buildCartItem(CartItem item, int index) {
     return Container(
       margin: EdgeInsets.only(bottom: 12),
       padding: EdgeInsets.all(12),
       decoration: BoxDecoration(
-        color: Color(0xFFD2B48C),
+        color: AppColors.white,
         borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: Colors.grey.shade200),
       ),
       child: Row(
         children: [
@@ -362,17 +535,50 @@ class _PosScreenState extends ConsumerState<PosScreen> {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  item['name'],
+                  item.product.name,
                   style: TextStyle(
                     fontSize: 16,
                     fontWeight: FontWeight.w600,
                   ),
                 ),
+                SizedBox(height: 4),
+                Text(
+                  Formatters.formatCurrency(item.product.price),
+                  style: TextStyle(
+                    fontSize: 14,
+                    color: AppColors.textSecondary,
+                  ),
+                ),
               ],
             ),
           ),
+          Row(
+            children: [
+              IconButton(
+                icon: Icon(Icons.remove_circle_outline),
+                onPressed: () => _updateQuantity(index, -1),
+                color: AppColors.primaryTeal,
+              ),
+              Container(
+                padding: EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+                decoration: BoxDecoration(
+                  color: AppColors.lightGray,
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Text(
+                  '${item.quantity}',
+                  style: TextStyle(fontWeight: FontWeight.bold),
+                ),
+              ),
+              IconButton(
+                icon: Icon(Icons.add_circle_outline),
+                onPressed: () => _updateQuantity(index, 1),
+                color: AppColors.primaryTeal,
+              ),
+            ],
+          ),
           Text(
-            Formatters.formatCurrency(item['price']),
+            Formatters.formatCurrency(item.subtotal),
             style: TextStyle(
               fontSize: 16,
               fontWeight: FontWeight.bold,
@@ -404,46 +610,67 @@ class _PosScreenState extends ConsumerState<PosScreen> {
       ],
     );
   }
+}
 
-  void _showCheckoutDialog(BuildContext context) {
-    showDialog(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: Text('Complete Payment'),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Text('Total Amount: ${Formatters.formatCurrency(26.40)}'),
-            SizedBox(height: 24),
-            ElevatedButton.icon(
-              onPressed: () {
-                Navigator.pop(context);
-                ScaffoldMessenger.of(context).showSnackBar(
-                  SnackBar(content: Text('Payment successful!')),
-                );
-              },
+class _CheckoutDialog extends StatelessWidget {
+  final double totalAmount;
+
+  const _CheckoutDialog({required this.totalAmount});
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: Text('Complete Payment'),
+      content: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Text(
+            'Total Amount',
+            style: TextStyle(fontSize: 14, color: Colors.grey),
+          ),
+          SizedBox(height: 8),
+          Text(
+            Formatters.formatCurrency(totalAmount),
+            style: TextStyle(fontSize: 32, fontWeight: FontWeight.bold),
+          ),
+          SizedBox(height: 24),
+          SizedBox(
+            width: double.infinity,
+            child: ElevatedButton.icon(
+              onPressed: () => Navigator.pop(context, 'Cash'),
               icon: Icon(Icons.money),
               label: Text('Cash'),
               style: ElevatedButton.styleFrom(
                 minimumSize: Size(double.infinity, 48),
+                backgroundColor: AppColors.primaryTeal,
               ),
             ),
-            SizedBox(height: 12),
-            ElevatedButton.icon(
-              onPressed: () {
-                Navigator.pop(context);
-                ScaffoldMessenger.of(context).showSnackBar(
-                  SnackBar(content: Text('Card payment successful!')),
-                );
-              },
+          ),
+          SizedBox(height: 12),
+          SizedBox(
+            width: double.infinity,
+            child: ElevatedButton.icon(
+              onPressed: () => Navigator.pop(context, 'Card'),
               icon: Icon(Icons.credit_card),
               label: Text('Card'),
               style: ElevatedButton.styleFrom(
                 minimumSize: Size(double.infinity, 48),
+                backgroundColor: AppColors.primaryTeal,
               ),
             ),
-          ],
-        ),
+          ),
+          SizedBox(height: 12),
+          SizedBox(
+            width: double.infinity,
+            child: OutlinedButton(
+              onPressed: () => Navigator.pop(context),
+              child: Text('Cancel'),
+              style: OutlinedButton.styleFrom(
+                minimumSize: Size(double.infinity, 48),
+              ),
+            ),
+          ),
+        ],
       ),
     );
   }
