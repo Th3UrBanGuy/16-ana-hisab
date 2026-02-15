@@ -1,5 +1,5 @@
-// This file is auto-generated. Do not edit manually.
-// Firebase configuration for web and mobile platforms
+// Firebase configuration for multi-platform support
+// Project: sholoanahisab
 
 import 'package:firebase_core/firebase_core.dart' show FirebaseOptions;
 import 'package:flutter/foundation.dart'
@@ -16,7 +16,10 @@ class DefaultFirebaseOptions {
       case TargetPlatform.iOS:
         return ios;
       case TargetPlatform.macOS:
-        return macos;
+        throw UnsupportedError(
+          'DefaultFirebaseOptions have not been configured for macOS - '
+          'you can reconfigure this by running the FlutterFire CLI again.',
+        );
       case TargetPlatform.windows:
         throw UnsupportedError(
           'DefaultFirebaseOptions have not been configured for windows - '
@@ -35,38 +38,28 @@ class DefaultFirebaseOptions {
   }
 
   static const FirebaseOptions web = FirebaseOptions(
-    apiKey: 'AIzaSyDemoKeyForWebPlatform',
-    appId: '1:123456789:web:abcdef123456',
-    messagingSenderId: '123456789',
-    projectId: 'retail-pro-demo',
-    authDomain: 'retail-pro-demo.firebaseapp.com',
-    storageBucket: 'retail-pro-demo.appspot.com',
-    measurementId: 'G-MEASUREMENT_ID',
+    apiKey: 'AIzaSyB1VeaBqlCmQlLnFdT0z-a5t4bhlAtfEJ8',
+    appId: '1:244961720850:web:ae3c5356b86261bf9c36cb',
+    messagingSenderId: '244961720850',
+    projectId: 'sholoanahisab',
+    authDomain: 'sholoanahisab.firebaseapp.com',
+    storageBucket: 'sholoanahisab.firebasestorage.app',
   );
 
   static const FirebaseOptions android = FirebaseOptions(
-    apiKey: 'AIzaSyDemoKeyForAndroidPlatform',
-    appId: '1:123456789:android:abcdef123456',
-    messagingSenderId: '123456789',
-    projectId: 'retail-pro-demo',
-    storageBucket: 'retail-pro-demo.appspot.com',
+    apiKey: 'AIzaSyB1VeaBqlCmQlLnFdT0z-a5t4bhlAtfEJ8',
+    appId: '1:244961720850:android:ae3c5356b86261bf9c36cb',
+    messagingSenderId: '244961720850',
+    projectId: 'sholoanahisab',
+    storageBucket: 'sholoanahisab.firebasestorage.app',
   );
 
   static const FirebaseOptions ios = FirebaseOptions(
-    apiKey: 'AIzaSyDemoKeyForIOSPlatform',
-    appId: '1:123456789:ios:abcdef123456',
-    messagingSenderId: '123456789',
-    projectId: 'retail-pro-demo',
-    storageBucket: 'retail-pro-demo.appspot.com',
-    iosBundleId: 'com.retailpro.flutterApp',
-  );
-
-  static const FirebaseOptions macos = FirebaseOptions(
-    apiKey: 'AIzaSyDemoKeyForMacOSPlatform',
-    appId: '1:123456789:macos:abcdef123456',
-    messagingSenderId: '123456789',
-    projectId: 'retail-pro-demo',
-    storageBucket: 'retail-pro-demo.appspot.com',
-    iosBundleId: 'com.retailpro.flutterApp',
+    apiKey: 'AIzaSyB1VeaBqlCmQlLnFdT0z-a5t4bhlAtfEJ8',
+    appId: '1:244961720850:ios:PLACEHOLDER',
+    messagingSenderId: '244961720850',
+    projectId: 'sholoanahisab',
+    storageBucket: 'sholoanahisab.firebasestorage.app',
+    iosBundleId: 'com.example.app',
   );
 }

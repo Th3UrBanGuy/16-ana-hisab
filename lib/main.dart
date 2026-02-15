@@ -1,26 +1,17 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'firebase_options.dart';
 import 'core/theme/app_theme.dart';
-import 'core/database/app_database.dart';
+import 'core/services/auth_service.dart';
 import 'core/services/firestore_service.dart';
 import 'features/auth/presentation/screens/login_screen.dart';
 import 'features/dashboard/presentation/screens/dashboard_screen.dart';
-import 'features/pos/presentation/screens/pos_screen.dart';
-import 'features/inventory/presentation/screens/inventory_screen.dart';
-import 'features/sales_history/presentation/screens/sales_history_screen.dart';
-import 'features/settings/presentation/screens/settings_screen.dart';
 
-// Global Database Provider
-final databaseProvider = Provider<AppDatabase>((ref) {
-  return AppDatabase();
-});
-
-// Global Firestore Service Provider
-final firestoreServiceProvider = Provider<FirestoreService>((ref) {
-  return FirestoreService();
-});
+// Global providers
+final authServiceProvider = Provider((ref) => AuthService());
+final firestoreServiceProvider = Provider((ref) => FirestoreService());
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -30,93 +21,102 @@ void main() async {
     options: DefaultFirebaseOptions.currentPlatform,
   );
   
-  runApp(
-    ProviderScope(
-      child: MyApp(),
-    ),
-  );
+  runApp(const ProviderScope(child: MyApp()));
 }
 
-class MyApp extends ConsumerWidget {
+class MyApp extends ConsumerStatefulWidget {
   const MyApp({super.key});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<MyApp> createState() => _MyAppState();
+}
+
+class _MyAppState extends ConsumerState<MyApp> {
+  bool _isLoading = true;
+  bool _isAuthenticated = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _initializeApp();
+  }
+
+  Future<void> _initializeApp() async {
+    try {
+      // Initialize auth service and check if user is logged in
+      final authService = ref.read(authServiceProvider);
+      final isAuthenticated = await authService.initialize();
+      
+      // Seed initial data if needed
+      if (isAuthenticated) {
+        final firestoreService = ref.read(firestoreServiceProvider);
+        await firestoreService.seedInitialData();
+      }
+      
+      setState(() {
+        _isAuthenticated = isAuthenticated;
+        _isLoading = false;
+      });
+    } catch (e) {
+      if (kDebugMode) {
+        debugPrint('App initialization error: $e');
+      }
+      setState(() {
+        _isLoading = false;
+      });
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
     return MaterialApp(
-      title: 'Retail Pro',
+      title: 'NeoPOS - Point of Sale System',
       debugShowCheckedModeBanner: false,
       theme: AppTheme.lightTheme,
-      darkTheme: AppTheme.darkTheme,
-      themeMode: ThemeMode.light,
-      initialRoute: '/',
-      routes: {
-        '/': (context) => LoginScreen(),
-        '/home': (context) => MainNavigationScreen(),
-      },
+      home: _isLoading
+          ? const SplashScreen()
+          : _isAuthenticated
+              ? const DashboardScreen()
+              : const LoginScreen(),
     );
   }
 }
 
-class MainNavigationScreen extends StatefulWidget {
-  const MainNavigationScreen({super.key});
-
-  @override
-  State<MainNavigationScreen> createState() => _MainNavigationScreenState();
-}
-
-class _MainNavigationScreenState extends State<MainNavigationScreen> {
-  int _selectedIndex = 0;
-
-  final List<Widget> _screens = [
-    DashboardScreen(),
-    PosScreen(),
-    InventoryScreen(),
-    SalesHistoryScreen(),
-    SettingsScreen(),
-  ];
-
-  final List<NavigationDestination> _destinations = [
-    NavigationDestination(
-      icon: Icon(Icons.dashboard_outlined),
-      selectedIcon: Icon(Icons.dashboard),
-      label: 'Home',
-    ),
-    NavigationDestination(
-      icon: Icon(Icons.point_of_sale_outlined),
-      selectedIcon: Icon(Icons.point_of_sale),
-      label: 'Register',
-    ),
-    NavigationDestination(
-      icon: Icon(Icons.inventory_2_outlined),
-      selectedIcon: Icon(Icons.inventory_2),
-      label: 'Stock',
-    ),
-    NavigationDestination(
-      icon: Icon(Icons.receipt_long_outlined),
-      selectedIcon: Icon(Icons.receipt_long),
-      label: 'Orders',
-    ),
-    NavigationDestination(
-      icon: Icon(Icons.settings_outlined),
-      selectedIcon: Icon(Icons.settings),
-      label: 'Settings',
-    ),
-  ];
+class SplashScreen extends StatelessWidget {
+  const SplashScreen({super.key});
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      body: SafeArea(
-        child: _screens[_selectedIndex],
-      ),
-      bottomNavigationBar: NavigationBar(
-        selectedIndex: _selectedIndex,
-        onDestinationSelected: (index) {
-          setState(() {
-            _selectedIndex = index;
-          });
-        },
-        destinations: _destinations,
+      body: Center(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Container(
+              width: 100,
+              height: 100,
+              decoration: BoxDecoration(
+                color: const Color(0xFF00BFA5),
+                borderRadius: BorderRadius.circular(24),
+              ),
+              child: const Icon(
+                Icons.store,
+                size: 60,
+                color: Colors.white,
+              ),
+            ),
+            const SizedBox(height: 24),
+            const Text(
+              'NeoPOS',
+              style: TextStyle(
+                fontSize: 32,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+            const SizedBox(height: 48),
+            const CircularProgressIndicator(),
+          ],
+        ),
       ),
     );
   }

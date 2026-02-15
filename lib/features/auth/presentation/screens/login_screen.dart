@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../../core/constants/app_constants.dart';
+import '../../../../main.dart';
+import '../../../dashboard/presentation/screens/dashboard_screen.dart';
 
 class LoginScreen extends ConsumerStatefulWidget {
   const LoginScreen({super.key});
@@ -10,9 +12,10 @@ class LoginScreen extends ConsumerStatefulWidget {
 }
 
 class _LoginScreenState extends ConsumerState<LoginScreen> {
-  final _usernameController = TextEditingController(text: 'admin');
-  final _passwordController = TextEditingController(text: 'admin123');
+  final _usernameController = TextEditingController();
+  final _passwordController = TextEditingController();
   bool _isLoading = false;
+  String? _errorMessage;
 
   @override
   void dispose() {
@@ -23,34 +26,44 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
 
   Future<void> _handleLogin() async {
     if (_usernameController.text.isEmpty || _passwordController.text.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Please enter username and password')),
-      );
+      setState(() {
+        _errorMessage = 'Please enter username and password';
+      });
       return;
     }
 
     setState(() {
       _isLoading = true;
+      _errorMessage = null;
     });
 
-    // Simulate login delay
-    await Future.delayed(const Duration(seconds: 1));
+    try {
+      final authService = ref.read(authServiceProvider);
+      final result = await authService.login(
+        _usernameController.text.trim(),
+        _passwordController.text,
+      );
 
-    // Simple authentication (for demo purposes)
-    if (_usernameController.text == 'admin' && _passwordController.text == 'admin123') {
       if (!mounted) return;
-      Navigator.pushReplacementNamed(context, '/home');
-    } else {
+
+      if (result['success'] == true) {
+        // Navigate to dashboard
+        Navigator.pushReplacement(
+          context,
+          MaterialPageRoute(builder: (context) => const DashboardScreen()),
+        );
+      } else {
+        setState(() {
+          _errorMessage = result['message'] ?? 'Login failed';
+          _isLoading = false;
+        });
+      }
+    } catch (e) {
       if (!mounted) return;
       setState(() {
+        _errorMessage = 'An error occurred. Please try again.';
         _isLoading = false;
       });
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Invalid credentials'),
-          backgroundColor: Colors.red,
-        ),
-      );
     }
   }
 
@@ -82,7 +95,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                 
                 // App Title
                 const Text(
-                  'Retail Pro',
+                  'NeoPOS',
                   style: TextStyle(
                     fontSize: 32,
                     fontWeight: FontWeight.bold,
@@ -98,6 +111,31 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                 ),
                 const SizedBox(height: 48),
                 
+                // Error message
+                if (_errorMessage != null)
+                  Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.all(12),
+                    margin: const EdgeInsets.only(bottom: 16),
+                    decoration: BoxDecoration(
+                      color: Colors.red.withValues(alpha: 0.1),
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(color: Colors.red),
+                    ),
+                    child: Row(
+                      children: [
+                        const Icon(Icons.error_outline, color: Colors.red),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Text(
+                            _errorMessage!,
+                            style: const TextStyle(color: Colors.red),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                
                 // Username Field
                 TextField(
                   controller: _usernameController,
@@ -107,6 +145,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                     hintText: 'Enter your username',
                   ),
                   enabled: !_isLoading,
+                  onSubmitted: (_) => _handleLogin(),
                 ),
                 const SizedBox(height: 16),
                 
@@ -150,13 +189,14 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                             style: TextStyle(
                               fontSize: 18,
                               fontWeight: FontWeight.w600,
+                              color: Colors.white,
                             ),
                           ),
                   ),
                 ),
-                const SizedBox(height: 24),
+                const SizedBox(height: 32),
                 
-                // Demo Credentials
+                // Info Box
                 Container(
                   padding: const EdgeInsets.all(16),
                   decoration: BoxDecoration(
@@ -167,6 +207,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                     ),
                   ),
                   child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Row(
                         children: [
@@ -177,7 +218,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                           ),
                           const SizedBox(width: 8),
                           Text(
-                            'Demo Credentials',
+                            'First Time Setup',
                             style: TextStyle(
                               fontWeight: FontWeight.bold,
                               color: Colors.blue.shade700,
@@ -186,8 +227,18 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                         ],
                       ),
                       const SizedBox(height: 8),
-                      const Text('Username: admin'),
-                      const Text('Password: admin123'),
+                      const Text(
+                        'An admin account will be created automatically on first launch.',
+                        style: TextStyle(fontSize: 13),
+                      ),
+                      const SizedBox(height: 8),
+                      Text(
+                        'Check Firebase Console for credentials after deployment.',
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: Colors.grey.shade700,
+                        ),
+                      ),
                     ],
                   ),
                 ),
